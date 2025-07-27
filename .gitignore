@@ -46,6 +46,7 @@ Thumbs.db
 *.log
 logs/
 
-# Database and collected data (optional - you might want to commit some sample data)
+# Database and collected data - keep structure but exclude contents
 database/metadata.json
-database/images/*/
+database/images/*
+!database/images/.gitkeep

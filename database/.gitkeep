@@ -1,0 +1,3 @@
+# This file keeps the database directory in git
+# The database directory is needed for the application to work
+# but the contents (metadata.json) are ignored for privacy
