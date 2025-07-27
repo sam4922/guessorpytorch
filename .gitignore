@@ -47,6 +47,7 @@ Thumbs.db
 logs/
 
 # Database and collected data - keep structure but exclude contents
-database/metadata.json
+# Note: Individual manifests contain coordinates needed for training
+# You can force-add specific manifests with: git add -f database/images/*/manifest.json
 database/images/*
 !database/images/.gitkeep

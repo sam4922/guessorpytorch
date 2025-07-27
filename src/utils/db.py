@@ -44,10 +44,12 @@ class Database:
             image_path = os.path.join(panorama_dir, image_data['filename'])
             image_data['image'].save(image_path, 'JPEG', quality=95)
         
-        # Create manifest with only headings (no lat/lng)
+        # Create manifest with coordinates for training/scoring
         manifest = {
             'panorama_id': panorama_id,
             'created_at': datetime.now().isoformat(),
+            'lat': lat,
+            'lng': lng,
             'images': [
                 {
                     'filename': img['filename'],

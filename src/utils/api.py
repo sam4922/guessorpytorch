@@ -6,6 +6,9 @@ import os
 import time
 import json
 import requests
+import asyncio
+import aiohttp
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Tuple, List, Dict
 from PIL import Image
 import io
@@ -89,6 +92,47 @@ class StreetViewAPI:
                 return True
         return False
     
+    def get_streetview_panorama_parallel(self, coordinates_list: List[Tuple[float, float]], 
+                                       headings: List[int] = None, max_workers: int = 3) -> List[Dict]:
+        """
+        Download multiple Street View panoramas in parallel with rate limiting.
+        
+        Args:
+            coordinates_list: List of (lat, lng) tuples
+            headings: List of headings to capture (uses config default if None)
+            max_workers: Number of parallel workers (respect rate limits)
+            
+        Returns:
+            List of successful panorama results
+        """
+        if headings is None:
+            headings = self.config['data_collection']['headings']
+        
+        results = []
+        
+        def fetch_single_panorama(lat_lng):
+            lat, lng = lat_lng
+            time.sleep(self.rate_limit_delay)  # Rate limiting
+            return self.get_streetview_panorama(lat, lng, headings)
+        
+        # Use ThreadPoolExecutor for parallel requests with rate limiting
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_coords = {
+                executor.submit(fetch_single_panorama, coords): coords 
+                for coords in coordinates_list
+            }
+            
+            for future in future_to_coords:
+                try:
+                    result = future.result(timeout=30)  # 30 second timeout per panorama
+                    if result:  # Only add successful results
+                        results.append(result)
+                except Exception as e:
+                    lat, lng = future_to_coords[future]
+                    print(f"Failed to fetch panorama at ({lat:.6f}, {lng:.6f}): {e}")
+        
+        return results
+
     def get_streetview_panorama(self, lat: float, lng: float, 
                               headings: List[int] = None) -> List[Dict]:
         """

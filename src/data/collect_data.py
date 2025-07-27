@@ -54,7 +54,7 @@ def main():
     # Collect command
     collect_parser = subparsers.add_parser('collect', help='Collect Street View images')
     collect_parser.add_argument('--max-images', type=int, default=100,
-                              help='Maximum number of images to collect (default: 100)')
+                              help='Maximum number of panoramas to collect (each has 6 heading images, default: 100)')
     collect_parser.add_argument('--north', type=float, help='Northern latitude bound')
     collect_parser.add_argument('--south', type=float, help='Southern latitude bound')
     collect_parser.add_argument('--east', type=float, help='Eastern longitude bound')
@@ -119,8 +119,7 @@ def main():
         
         # Update config if max-images specified
         max_images = args.max_images
-        if max_images != 100:
-            print(f"🎯 Collecting up to {max_images} images")
+        print(f"🎯 Collecting up to {max_images} panoramas ({max_images * 6} total images)")
         
         print("⏹️  Press Ctrl+C to stop collection at any time")
         
