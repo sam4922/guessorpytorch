@@ -179,22 +179,6 @@ class ImageCollector:
         
         print(f"Collection complete: {stats}")
         return stats
-        
-        except KeyboardInterrupt:
-            print(f"\n⏹️  Image collection stopped by user after {collected} images")
-        
-        finally:
-            pbar.close()
-        
-        stats = {
-            'collected': collected,
-            'failed': failed,
-            'skipped': skipped,
-            'total_attempted': collected + failed + skipped
-        }
-        
-        print(f"Collection complete: {stats}")
-        return stats
     
     def collect_images_from_tiles(self, covered_tiles: List[Tuple[int, int, int]], 
                                 max_panoramas: int = None,

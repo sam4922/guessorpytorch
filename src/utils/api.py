@@ -6,7 +6,7 @@ import os
 import time
 import json
 import requests
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Dict
 from PIL import Image
 import io
 import mercantile
