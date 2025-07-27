@@ -21,7 +21,12 @@
   "api": {
     "coverage_base_url": "https://tile.googleapis.com/v1/streetview/coverage",
     "streetview_base_url": "https://maps.googleapis.com/maps/api/streetview",
-    "request_timeout": 30,
-    "rate_limit_delay": 0.1
+    "request_timeout": 15,
+    "rate_limit_delay": 0.01,
+    "max_workers": 10,
+    "batch_size": 25,
+    "requests_per_second": 50,
+    "daily_quota_limit": 25000,
+    "burst_limit": 1000
   }
 }

@@ -169,3 +169,54 @@ class Database:
             print(f"Removed {removed_count} incomplete panorama directories")
         
         return removed_count
+    
+    def get_detailed_statistics(self) -> Dict[str, Any]:
+        """Get detailed dataset statistics including file sizes and directory info."""
+        panoramas = self.get_all_panoramas()
+        
+        total_images = 0
+        total_size_bytes = 0
+        total_directories = 0
+        largest_panorama = 0
+        smallest_panorama = float('inf')
+        
+        # Scan all panorama directories
+        if os.path.exists(self.images_dir):
+            for item in os.listdir(self.images_dir):
+                item_path = os.path.join(self.images_dir, item)
+                if os.path.isdir(item_path):
+                    total_directories += 1
+                    panorama_size = 0
+                    panorama_images = 0
+                    
+                    # Calculate size of this panorama directory
+                    for file in os.listdir(item_path):
+                        file_path = os.path.join(item_path, file)
+                        if os.path.isfile(file_path):
+                            file_size = os.path.getsize(file_path)
+                            panorama_size += file_size
+                            total_size_bytes += file_size
+                            if file.endswith(('.jpg', '.jpeg', '.png')):
+                                panorama_images += 1
+                                total_images += 1
+                    
+                    if panorama_size > largest_panorama:
+                        largest_panorama = panorama_size
+                    if panorama_size < smallest_panorama and panorama_size > 0:
+                        smallest_panorama = panorama_size
+        
+        if smallest_panorama == float('inf'):
+            smallest_panorama = 0
+        
+        return {
+            'total_panoramas': len(panoramas),
+            'total_directories': total_directories,
+            'total_images': total_images,
+            'total_size_bytes': total_size_bytes,
+            'total_size_mb': total_size_bytes / (1024 * 1024),
+            'total_size_gb': total_size_bytes / (1024 * 1024 * 1024),
+            'average_panorama_size_mb': (total_size_bytes / len(panoramas) / (1024 * 1024)) if len(panoramas) > 0 else 0,
+            'largest_panorama_mb': largest_panorama / (1024 * 1024),
+            'smallest_panorama_mb': smallest_panorama / (1024 * 1024),
+            'images_per_panorama': len(self.config['data_collection']['headings'])
+        }

@@ -1,39 +1,43 @@
 #!/usr/bin/env python3
 """
-Command line interface for GeoGuessr data collection.
+GeoGuessr Data Collection Tool
+Command line interface for collecting Street View panoramas.
 """
 
-import argparse
-import sys
 import os
+import json
+import sys
+import argparse
+import subprocess
+from typing import Dict
 
-# Add project root to path
-project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.insert(0, project_root)
-
-from src.data.collect import main as collect_main
-from src.data.preprocess import main as preprocess_main
-from src.utils.db import Database
+# Add parent directory to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 
 def check_api_key():
     """Check if API key is configured."""
-    from dotenv import load_dotenv
-    load_dotenv()
-    
-    api_key = os.getenv('GOOGLE_STREET_VIEW_API_KEY')
-    if not api_key or api_key == 'your_api_key_here':
-        print("⚠️  API key not configured!")
-        print("Please edit .env file and set your Google Street View API key.")
-        print("Get your API key from: https://console.cloud.google.com/apis/credentials")
-        print("Make sure to enable the Street View Static API and Maps Tile API")
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        
+        api_key = os.getenv('GOOGLE_STREET_VIEW_API_KEY')
+        if not api_key or api_key == 'your_api_key_here':
+            print("⚠️  API key not configured!")
+            print("Please edit .env file and set your Google Street View API key.")
+            print("Get your API key from: https://console.cloud.google.com/apis/credentials")
+            print("Make sure to enable the Street View Static API and Maps Tile API")
+            return False
+        return True
+    except Exception as e:
+        print(f"Error checking API key: {e}")
         return False
-    return True
 
 
 def show_stats():
     """Show dataset statistics."""
     try:
+        from src.utils.db import Database
         db = Database()
         stats = db.get_statistics()
         
@@ -47,14 +51,106 @@ def show_stats():
         print(f"Error getting statistics: {e}")
 
 
+def collect_main(max_images: int = 100, bounds: Dict = None, 
+                batch_size: int = None, max_workers: int = None, 
+                requests_per_second: int = None):
+    """Run the collection process."""
+    try:
+        # Check for required packages first
+        try:
+            import aiohttp
+            import aiofiles
+        except ImportError:
+            print("📦 Installing required packages...")
+            subprocess.run([sys.executable, "-m", "pip", "install", "aiohttp", "aiofiles", "python-dotenv"])
+            import aiohttp
+            import aiofiles
+        
+        # Now import the async collector
+        import asyncio
+        from src.utils.api import FastCollector
+        
+        async def run_collection():
+            # Load config
+            config_path = 'src/config.json'
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+            
+            # Override config with command line arguments
+            if batch_size is not None:
+                config['api']['batch_size'] = batch_size
+            if max_workers is not None:
+                config['api']['max_workers'] = max_workers
+            if requests_per_second is not None:
+                config['api']['requests_per_second'] = requests_per_second
+            
+            # Use provided bounds or default
+            if bounds is None:
+                bounds_to_use = config['data_collection']['default_bounds']
+            else:
+                bounds_to_use = bounds
+            
+            # Generate coordinates
+            import random
+            coordinates = []
+            coordinate_buffer = max_images * 2
+            
+            for _ in range(coordinate_buffer):
+                lat = random.uniform(bounds_to_use['south'], bounds_to_use['north'])
+                lng = random.uniform(bounds_to_use['west'], bounds_to_use['east'])
+                coordinates.append((lat, lng))
+            
+            # Initialize collector and run
+            collector = FastCollector(config_path)
+            # Apply runtime config overrides
+            if batch_size is not None:
+                collector.batch_size = batch_size
+            if max_workers is not None:
+                collector.max_workers = max_workers
+                collector.semaphore = asyncio.Semaphore(max_workers)
+            if requests_per_second is not None:
+                collector.requests_per_second = requests_per_second
+                collector.rate_limiter = asyncio.Semaphore(requests_per_second)
+            
+            stats = await collector.collect_panoramas_fast(coordinates, max_images)
+            
+            print(f"\n✅ Collection complete!")
+            print(f"   Collected: {stats['collected']} panoramas")
+            print(f"   Failed: {stats['failed']} attempts")
+            print(f"   Total time: {stats['total_time']:.1f} seconds")
+        
+        # Run the async collection
+        asyncio.run(run_collection())
+        
+    except Exception as e:
+        print(f"❌ Collection error: {e}")
+        raise
+
+
+def preprocess_main():
+    """Run the preprocessing workflow."""
+    from src.data.preprocess import main as preprocess_main_func
+    preprocess_main_func()
+
+
 def main():
+    """Main entry point with command line interface."""
     parser = argparse.ArgumentParser(description='GeoGuessr Data Collection Tool')
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    
+    # Setup command
+    setup_parser = subparsers.add_parser('setup', help='Check setup and configuration')
     
     # Collect command
     collect_parser = subparsers.add_parser('collect', help='Collect Street View images')
     collect_parser.add_argument('--max-images', type=int, default=100,
-                              help='Maximum number of panoramas to collect (each has 6 heading images, default: 100)')
+                              help='Maximum number of panoramas to collect (default: 100)')
+    collect_parser.add_argument('--batch-size', type=int, default=25,
+                              help='Number of coordinates per batch (default: 25)')
+    collect_parser.add_argument('--max-workers', type=int, default=10,
+                              help='Maximum concurrent downloads (default: 10)')
+    collect_parser.add_argument('--requests-per-second', type=int, default=50,
+                              help='Rate limit for API requests (default: 50)')
     collect_parser.add_argument('--north', type=float, help='Northern latitude bound')
     collect_parser.add_argument('--south', type=float, help='Southern latitude bound')
     collect_parser.add_argument('--east', type=float, help='Eastern longitude bound')
@@ -68,9 +164,6 @@ def main():
     
     # Filter command
     filter_parser = subparsers.add_parser('filter', help='Filter out indoor images')
-    
-    # Setup command
-    setup_parser = subparsers.add_parser('setup', help='Check setup and configuration')
     
     args = parser.parse_args()
     
@@ -117,14 +210,19 @@ def main():
         else:
             print("📍 Using default bounds (USA)")
         
-        # Update config if max-images specified
         max_images = args.max_images
         print(f"🎯 Collecting up to {max_images} panoramas ({max_images * 6} total images)")
-        
+        print(f"⚙️  Settings: batch_size={getattr(args, 'batch_size', 25)}, max_workers={getattr(args, 'max_workers', 10)}, rate_limit={getattr(args, 'requests_per_second', 50)}/s")
         print("⏹️  Press Ctrl+C to stop collection at any time")
         
         try:
-            collect_main(max_images=max_images, bounds=bounds)
+            collect_main(
+                max_images=max_images, 
+                bounds=bounds,
+                batch_size=getattr(args, 'batch_size', None),
+                max_workers=getattr(args, 'max_workers', None),
+                requests_per_second=getattr(args, 'requests_per_second', None)
+            )
             show_stats()
         except KeyboardInterrupt:
             print("\n⏹️  Collection stopped by user")
@@ -135,7 +233,6 @@ def main():
     
     elif args.command == 'preprocess':
         print("🔄 Starting data preprocessing...")
-        
         try:
             preprocess_main()
         except Exception as e:
@@ -162,4 +259,4 @@ def main():
 
 
 if __name__ == '__main__':
-    exit(main())
+    sys.exit(main())

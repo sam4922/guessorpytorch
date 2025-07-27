@@ -1,0 +1,46 @@
+{
+  "image_preprocessing": {
+    "target_size": [
+      224,
+      224
+    ],
+    "normalization": {
+      "mean": [
+        0.485,
+        0.456,
+        0.406
+      ],
+      "std": [
+        0.229,
+        0.224,
+        0.225
+      ]
+    },
+    "format": "CHW",
+    "dtype": "float32"
+  },
+  "dataset_info": {
+    "total_images": 1488,
+    "batch_size": 32,
+    "coordinate_range": {
+      "north": 48.96465678635125,
+      "south": 25.128484303686868,
+      "east": -66.31822548129668,
+      "west": -124.34601649851487
+    },
+    "geographic_coverage": {
+      "lat_span": 23.83617248266438,
+      "lng_span": 58.02779101721819
+    }
+  },
+  "validation_results": {
+    "total_images": 1488,
+    "valid_images": 1488,
+    "corrupted_images": 0,
+    "missing_files": 0,
+    "invalid_coordinates": 0,
+    "size_issues": 0,
+    "errors": [],
+    "success_rate": 100.0
+  }
+}

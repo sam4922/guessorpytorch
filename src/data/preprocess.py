@@ -39,7 +39,7 @@ class ImagePreprocessor:
         """
         print("Validating dataset...")
         
-        images_metadata = self.db.get_all_images()
+        images_metadata = self.get_all_images()
         validation_results = {
             'total_images': len(images_metadata),
             'valid_images': 0,
@@ -162,7 +162,7 @@ class ImagePreprocessor:
             raise ValueError("Ratios must sum to 1.0")
         
         # Get all valid images
-        all_images = self.db.get_all_images()
+        all_images = self.get_all_images()
         
         # Filter out any images without required fields
         valid_images = []
@@ -209,7 +209,7 @@ class ImagePreprocessor:
         Returns:
             Dictionary with coordinate statistics
         """
-        images = self.db.get_all_images()
+        images = self.get_all_images()
         
         if not images:
             return {'error': 'No images found'}
@@ -294,7 +294,29 @@ class ImagePreprocessor:
         
         print(f"Preprocessing configuration saved to {config_file}")
         return preprocessing_config
-
+    
+    def get_all_images(self) -> List[Dict[str, Any]]:
+        """Get all individual images from all panoramas."""
+        images = []
+        panoramas = self.db.get_all_panoramas()
+        
+        for panorama in panoramas:
+            panorama_id = panorama['panorama_id']
+            lat = panorama['lat']
+            lng = panorama['lng']
+            
+            for image_info in panorama.get('images', []):
+                images.append({
+                    'filename': f"{panorama_id}/{image_info['filename']}",
+                    'panorama_id': panorama_id,
+                    'lat': lat,
+                    'lng': lng,
+                    'heading': image_info['heading'],
+                    'size': image_info.get('size', 640),
+                    'fov': image_info.get('fov', 90)
+                })
+        
+        return images
 
 def main():
     """Main preprocessing workflow."""
