@@ -9,6 +9,10 @@ import json
 import sys
 import argparse
 import subprocess
+import asyncio
+from pathlib import Path
+from PIL import Image
+import io
 from typing import Dict
 
 # Add parent directory to path
@@ -53,7 +57,7 @@ def show_stats():
 
 def collect_main(max_images: int = 100, bounds: Dict = None, 
                 batch_size: int = None, max_workers: int = None, 
-                requests_per_second: int = None):
+                requests_per_second: int = None, pre_filter: bool = True):
     """Run the collection process."""
     try:
         # Check for required packages first
@@ -93,7 +97,8 @@ def collect_main(max_images: int = 100, bounds: Dict = None,
             # Generate coordinates
             import random
             coordinates = []
-            coordinate_buffer = max_images * 2
+            # Generate more coordinates when pre-filtering is enabled
+            coordinate_buffer = max_images * (5 if pre_filter else 2)
             
             for _ in range(coordinate_buffer):
                 lat = random.uniform(bounds_to_use['south'], bounds_to_use['north'])
@@ -112,12 +117,15 @@ def collect_main(max_images: int = 100, bounds: Dict = None,
                 collector.requests_per_second = requests_per_second
                 collector.rate_limiter = asyncio.Semaphore(requests_per_second)
             
-            stats = await collector.collect_panoramas_fast(coordinates, max_images)
+            print(f"🔍 Pre-filtering: {'enabled' if pre_filter else 'disabled'}")
+            stats = await collector.collect_panoramas_fast(coordinates, max_images, pre_filter)
             
             print(f"\n✅ Collection complete!")
             print(f"   Collected: {stats['collected']} panoramas")
             print(f"   Failed: {stats['failed']} attempts")
             print(f"   Total time: {stats['total_time']:.1f} seconds")
+            if 'metadata_calls_made' in stats:
+                print(f"   Metadata checks: {stats['metadata_calls_made']}")
         
         # Run the async collection
         asyncio.run(run_collection())
@@ -131,6 +139,218 @@ def preprocess_main():
     """Run the preprocessing workflow."""
     from src.data.preprocess import main as preprocess_main_func
     preprocess_main_func()
+
+
+def test_single_image(image_path: str):
+    """Test image validation on a single image file."""
+    try:
+        from src.utils.api import FastCollector
+        collector = FastCollector()
+        
+        # Read the image file
+        with open(image_path, 'rb') as f:
+            image_data = f.read()
+        
+        # Test our validation
+        is_valid = collector.validate_image_content(image_data)
+        
+        # Also get basic image info
+        image = Image.open(io.BytesIO(image_data))
+        
+        print(f"\n📸 Image: {os.path.basename(image_path)}")
+        print(f"   Size: {image.size[0]}x{image.size[1]}")
+        print(f"   Mode: {image.mode}")
+        print(f"   File size: {len(image_data)} bytes")
+        print(f"   Validation result: {'✅ VALID' if is_valid else '❌ INVALID (likely no imagery placeholder)'}")
+        
+        return is_valid
+        
+    except Exception as e:
+        print(f"❌ Error testing {image_path}: {e}")
+        return None
+
+
+def test_images_in_directory(directory: str):
+    """Test all images in a directory."""
+    image_dir = Path(directory)
+    if not image_dir.exists():
+        print(f"❌ Directory {directory} does not exist")
+        return
+    
+    print(f"🔍 Testing images in: {directory}")
+    
+    valid_count = 0
+    invalid_count = 0
+    error_count = 0
+    
+    # Find all image files
+    image_extensions = ['.jpg', '.jpeg', '.png', '.bmp']
+    image_files = []
+    
+    for ext in image_extensions:
+        image_files.extend(image_dir.rglob(f'*{ext}'))
+        image_files.extend(image_dir.rglob(f'*{ext.upper()}'))
+    
+    if not image_files:
+        print(f"❌ No image files found in {directory}")
+        return
+    
+    print(f"📊 Found {len(image_files)} image files to test")
+    
+    for image_file in image_files:
+        result = test_single_image(str(image_file))
+        if result is True:
+            valid_count += 1
+        elif result is False:
+            invalid_count += 1
+        else:
+            error_count += 1
+    
+    print(f"\n📈 Summary:")
+    print(f"   ✅ Valid images: {valid_count}")
+    print(f"   ❌ Invalid images (placeholders): {invalid_count}")
+    print(f"   ⚠️  Errors: {error_count}")
+    success_rate = 100 * valid_count/(valid_count + invalid_count) if (valid_count + invalid_count) > 0 else 0
+    print(f"   📊 Success rate: {valid_count}/{valid_count + invalid_count} ({success_rate:.1f}%)")
+
+
+async def test_live_coordinates():
+    """Test the improved collection on a few sample coordinates."""
+    print("🌐 Testing live coordinate validation...")
+    
+    # Some test coordinates - mix of good and bad locations
+    test_coords = [
+        (40.7589, -73.9851),  # Times Square, NYC - should have imagery
+        (37.7749, -122.4194), # San Francisco - should have imagery  
+        (71.0, -8.0),         # Svalbard - likely no imagery
+        (0.0, 0.0),           # Null Island - definitely no imagery
+        (48.8566, 2.3522),    # Paris - should have imagery
+    ]
+    
+    try:
+        from src.utils.api import FastCollector
+        collector = FastCollector()
+        
+        # Test the new pre-filtering
+        print(f"🔍 Testing metadata pre-filtering on {len(test_coords)} coordinates...")
+        filtered_coords = await collector.batch_check_imagery_available(test_coords)
+        
+        print(f"✅ Filtered coordinates: {len(filtered_coords)}/{len(test_coords)} have available imagery")
+        for i, (lat, lng) in enumerate(test_coords):
+            has_imagery = (lat, lng) in filtered_coords
+            print(f"   {i+1}. ({lat}, {lng}): {'✅ Available' if has_imagery else '❌ No imagery'}")
+        
+    except Exception as e:
+        print(f"❌ Error testing live coordinates: {e}")
+
+
+def validate_main():
+    """Test image validation functionality."""
+    print("🧪 Image Validation Test Tool")
+    print("=" * 50)
+    
+    # Test existing collected images if any
+    images_dir = "database/images"
+    if os.path.exists(images_dir):
+        print("🔍 Testing existing collected images...")
+        test_images_in_directory(images_dir)
+    else:
+        print("📁 No existing images found. Run collection first.")
+    
+    # Test live coordinates (requires API key)
+    if check_api_key():
+        try:
+            asyncio.run(test_live_coordinates())
+        except Exception as e:
+            print(f"⚠️  Could not test live coordinates: {e}")
+            print("💡 Make sure your .env file has GOOGLE_STREET_VIEW_API_KEY set")
+    else:
+        print("⚠️  Skipping live coordinate test - API key not configured")
+
+
+def test_image_validation():
+    """Test the image validation with sample images."""
+    try:
+        from src.utils.api import FastCollector
+        collector = FastCollector()
+        
+        print('🧪 Testing image validation algorithm...')
+        
+        # Create a test gray image (simulate no-imagery placeholder)
+        test_image = Image.new('RGB', (640, 640), color=(229, 227, 223))  # Typical placeholder color
+        buffer = io.BytesIO()
+        test_image.save(buffer, format='JPEG')
+        gray_image_data = buffer.getvalue()
+        
+        # Test validation
+        is_valid_gray = collector.validate_image_content(gray_image_data)
+        print(f'📸 Gray placeholder test: {"❌ Correctly rejected" if not is_valid_gray else "⚠️ Incorrectly accepted"}')
+        
+        # Create a colorful test image  
+        colorful_image = Image.new('RGB', (640, 640))
+        pixels = []
+        for y in range(640):
+            for x in range(640):
+                # Create a gradient pattern with varied colors
+                r = (x * 255) // 640
+                g = (y * 255) // 640 
+                b = ((x + y) * 255) // 1280
+                pixels.append((r, g, b))
+        colorful_image.putdata(pixels)
+        
+        buffer2 = io.BytesIO()
+        colorful_image.save(buffer2, format='JPEG')
+        colorful_image_data = buffer2.getvalue()
+        
+        is_valid_colorful = collector.validate_image_content(colorful_image_data)
+        print(f'🌈 Colorful test image: {"✅ Correctly accepted" if is_valid_colorful else "⚠️ Incorrectly rejected"}')
+        
+        print(f'🎯 Validation working: {"✅ YES" if (not is_valid_gray and is_valid_colorful) else "❌ NO"}')
+        
+    except Exception as e:
+        print(f"❌ Error testing validation: {e}")
+
+
+def filter_main():
+    """Filter existing images to remove placeholders."""
+    print("🔍 Filtering existing images to remove placeholders...")
+    
+    images_dir = "database/images"
+    if not os.path.exists(images_dir):
+        print(f"❌ Directory {images_dir} does not exist")
+        return
+    
+    try:
+        from src.utils.api import FastCollector
+        collector = FastCollector()
+        
+        removed_count = 0
+        total_count = 0
+        
+        # Find all image files
+        image_extensions = ['.jpg', '.jpeg', '.png', '.bmp']
+        
+        for image_path in Path(images_dir).rglob('*'):
+            if image_path.suffix.lower() in image_extensions:
+                total_count += 1
+                
+                # Read and validate image
+                with open(image_path, 'rb') as f:
+                    image_data = f.read()
+                
+                if not collector.validate_image_content(image_data):
+                    print(f"🗑️  Removing placeholder: {image_path.name}")
+                    os.remove(image_path)
+                    removed_count += 1
+        
+        print(f"\n📊 Filtering complete:")
+        print(f"   📸 Total images processed: {total_count}")
+        print(f"   🗑️  Placeholders removed: {removed_count}")
+        print(f"   ✅ Valid images remaining: {total_count - removed_count}")
+        print(f"   📈 Quality improvement: {100 * (total_count - removed_count)/total_count:.1f}% valid")
+        
+    except Exception as e:
+        print(f"❌ Error filtering images: {e}")
 
 
 def main():
@@ -151,6 +371,8 @@ def main():
                               help='Maximum concurrent downloads (default: 10)')
     collect_parser.add_argument('--requests-per-second', type=int, default=50,
                               help='Rate limit for API requests (default: 50)')
+    collect_parser.add_argument('--no-pre-filter', action='store_true',
+                              help='Disable pre-filtering with metadata API (faster but lower success rate)')
     collect_parser.add_argument('--north', type=float, help='Northern latitude bound')
     collect_parser.add_argument('--south', type=float, help='Southern latitude bound')
     collect_parser.add_argument('--east', type=float, help='Eastern longitude bound')
@@ -163,7 +385,14 @@ def main():
     stats_parser = subparsers.add_parser('stats', help='Show dataset statistics')
     
     # Filter command
-    filter_parser = subparsers.add_parser('filter', help='Filter out indoor images')
+    filter_parser = subparsers.add_parser('filter', help='Filter out placeholder images')
+    
+    # Validate command
+    validate_parser = subparsers.add_parser('validate', help='Test image validation on existing images')
+    
+    # Test command
+    test_parser = subparsers.add_parser('test', help='Test image validation algorithm')
+    test_parser.add_argument('path', nargs='?', help='Path to image file or directory to test')
     
     args = parser.parse_args()
     
@@ -213,6 +442,7 @@ def main():
         max_images = args.max_images
         print(f"🎯 Collecting up to {max_images} panoramas ({max_images * 6} total images)")
         print(f"⚙️  Settings: batch_size={getattr(args, 'batch_size', 25)}, max_workers={getattr(args, 'max_workers', 10)}, rate_limit={getattr(args, 'requests_per_second', 50)}/s")
+        print(f"🔍 Pre-filtering: {'disabled (faster but lower quality)' if args.no_pre_filter else 'enabled (higher quality)'}")
         print("⏹️  Press Ctrl+C to stop collection at any time")
         
         try:
@@ -221,7 +451,8 @@ def main():
                 bounds=bounds,
                 batch_size=getattr(args, 'batch_size', None),
                 max_workers=getattr(args, 'max_workers', None),
-                requests_per_second=getattr(args, 'requests_per_second', None)
+                requests_per_second=getattr(args, 'requests_per_second', None),
+                pre_filter=not args.no_pre_filter
             )
             show_stats()
         except KeyboardInterrupt:
@@ -243,13 +474,27 @@ def main():
         show_stats()
     
     elif args.command == 'filter':
-        print("🔍 Filtering indoor images...")
+        print("🔍 Filtering placeholder images...")
         try:
-            from src.utils.filter import main as filter_main
             filter_main()
         except Exception as e:
             print(f"❌ Filtering failed: {e}")
             return 1
+    
+    elif args.command == 'validate':
+        validate_main()
+    
+    elif args.command == 'test':
+        if args.path:
+            if os.path.isfile(args.path):
+                test_single_image(args.path)
+            elif os.path.isdir(args.path):
+                test_images_in_directory(args.path)
+            else:
+                print(f"❌ Path {args.path} does not exist")
+                return 1
+        else:
+            test_image_validation()
     
     else:
         parser.print_help()
