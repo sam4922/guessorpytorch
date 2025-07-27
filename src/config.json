@@ -1,0 +1,27 @@
+{
+  "data_collection": {
+    "max_zoom_level": 14,
+    "min_zoom_level": 5,
+    "images_per_session": 100,
+    "tile_size": 256,
+    "image_size": 640,
+    "fov": 90,
+    "pitch": 0,
+    "headings": [0, 60, 120, 180, 240, 300],
+    "default_bounds": {
+      "north": 49.0,
+      "south": 25.0,
+      "east": -66.0,
+      "west": -125.0
+    }
+  },
+  "database": {
+    "images_dir": "database/images"
+  },
+  "api": {
+    "coverage_base_url": "https://tile.googleapis.com/v1/streetview/coverage",
+    "streetview_base_url": "https://maps.googleapis.com/maps/api/streetview",
+    "request_timeout": 30,
+    "rate_limit_delay": 0.1
+  }
+}
