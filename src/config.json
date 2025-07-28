@@ -7,7 +7,7 @@
     "image_size": 640,
     "fov": 90,
     "pitch": 0,
-    "headings": [0, 60, 120, 180, 240, 300],
+    "headings": [0, 90, 180, 270],
     "default_bounds": {
       "north": 49.0,
       "south": 25.0,

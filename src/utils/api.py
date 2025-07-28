@@ -77,17 +77,17 @@ class FastCollector:
         # Rate limiting
         self.semaphore = asyncio.Semaphore(self.max_workers)
         self.rate_limiter = asyncio.Semaphore(self.requests_per_second)
-    
-    @property
-    def api_key(self) -> str:
-        """Get the current API key (with rotation support)."""
-        return self.api_keys[self.current_key_index]
         
         # API quota tracking
         self.requests_made = 0
         self.metadata_requests_made = 0
         self.quota_limit = 25000  # Google's daily limit
         self.consecutive_failures = 0
+    
+    @property
+    def api_key(self) -> str:
+        """Get the current API key (with rotation support)."""
+        return self.api_keys[self.current_key_index]
     
     async def check_imagery_available_async(self, session: aiohttp.ClientSession, 
                                           lat: float, lng: float) -> bool:
@@ -271,7 +271,7 @@ class FastCollector:
                 # Check if we got valid images
                 valid_images = [img for img in images_data if img is not None]
                 
-                if len(valid_images) >= 4:  # Require at least 4 out of 6 images
+                if len(valid_images) >= 2:  # Require at least 4 out of 6 images
                     panorama_id = str(uuid.uuid4())
                     images = []
                     
@@ -487,7 +487,7 @@ class FastCollector:
         
         # Print final summary
         print(f"\n🎯 Collection complete!")
-        print(f"✅ Collected: {collected} panoramas ({collected * 6} images)")
+        print(f"✅ Collected: {collected} panoramas ({collected * 2} images)")
         print(f"❌ Failed: {failed} attempts")
         print(f"⏱️  Total time: {total_time:.1f} seconds ({total_time/60:.1f} minutes)")
         print(f"🚀 Average rate: {overall_rate:.1f} requests/second")
